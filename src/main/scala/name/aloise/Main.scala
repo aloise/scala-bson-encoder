@@ -1,13 +1,14 @@
 package name.aloise
 
 import name.aloise.bson._
+import name.aloise.bson.EncoderDerivation.gen
 import org.mongodb.scala.bson.BsonInt64
 
 object Main extends App {
 
   final class ObjectId(val id: Int) extends AnyVal
 
-  val anyValEncoder: Encoder[ObjectId] = EncoderDerivation.gen[ObjectId]
+  val anyValEncoder: Encoder[ObjectId] = gen[ObjectId]
 
   case class Test1(name: String, value2: Int)
 

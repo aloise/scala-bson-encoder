@@ -31,7 +31,6 @@ object Encoder extends LowPrioEncoders {
   def apply[T : Encoder](a: T): BsonValue = implicitly[Encoder[T]].apply(a)
 }
 
-
 object EncoderDerivation {
   type Typeclass[T] = Encoder[T]
 
@@ -90,8 +89,7 @@ object EncoderDerivation {
         val className = config.adtClassNameMapper(subtype.typeName.short)
         val outputDocWithoutTypeDiscriminator =
           baseBson match {
-            case doc: BsonDocument
-              if (doc.containsKey(config.discriminatorFieldName)) =>
+            case doc: BsonDocument if (doc.containsKey(config.discriminatorFieldName)) =>
               // It was encoded as a document, we are injecting the discriminator field
               // field name clashes with discriminator field
               throw new IllegalArgumentException(
