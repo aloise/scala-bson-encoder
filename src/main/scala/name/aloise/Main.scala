@@ -5,6 +5,10 @@ import org.mongodb.scala.bson.BsonInt64
 
 object Main extends App {
 
+  final class ObjectId(val id: Int) extends AnyVal
+
+  val anyValEncoder: Encoder[ObjectId] = EncoderDerivation.gen[ObjectId]
+
   case class Test1(name: String, value2: Int)
 
   val encoder: Encoder[Test1] = EncoderDerivation.gen[Test1]
@@ -23,7 +27,8 @@ object Main extends App {
 
   println(encoder(Test1("Hello World", 2)))
   println(adtEncoder(AdtTest1("Hello World")))
-  println(adtEncoder(AdtTest3(List("Hello World", "Hello Again"), None, Long.MaxValue)))
+//  println(adtEncoder(AdtTest3(List("Hello World", "Hello Again"), None, Long.MaxValue)))
   println(adtEncoder(AdtTest4Primitive(5L)))
   println(adtEncoder(AdtObject))
+  println(anyValEncoder(new ObjectId(4)))
 }

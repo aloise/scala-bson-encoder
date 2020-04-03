@@ -11,18 +11,19 @@ trait Encoder[-T] {
 }
 
 trait LowPrioEncoders {
-
+//  import shapeless._
   import scala.jdk.CollectionConverters._
 
   implicit val stringEncoder: Encoder[String] = new BsonString(_)
   implicit val intEncoder: Encoder[Int] = new BsonInt32(_)
   implicit val longEncoder: Encoder[Long] = new BsonInt64(_)
   implicit val doubleEncoder: Encoder[Double] = new BsonDouble(_)
-  // implicit def anyValEncoder[T <: AnyVal, H <: T :: HNil]: Encoder[] = ???
+  implicit val boolEncoder: Encoder[Boolean] = new BsonBoolean(_)
+  implicit val byteArrayEncoder: Encoder[Array[Byte]] = new BsonBinary(_)
+//  implicit def anyValEncoder[A: Encoder, T <: AnyVal](implicit generic: Generic.Aux[T, A :: HNil]): Encoder[T] = (a: T) => Encoder(generic.to(a).head)
   implicit def optionEncoder[A : Encoder]: Encoder[Option[A]] = (a: Option[A]) =>
     a.fold[BsonValue](new BsonNull)(Encoder[A])
-
-  implicit def listEncoder[A : Encoder]: Encoder[Iterable[A]] = (a: Iterable[A]) =>
+  implicit def iterableEncoder[A : Encoder]: Encoder[Iterable[A]] = (a: Iterable[A]) =>
     new BsonArray(a.map(Encoder[A]).toList.asJava)
 }
 
@@ -42,7 +43,7 @@ object EncoderDerivation {
       }
       keyAnnotation match {
         case Some(ann) => p.label -> ann.value
-        case None      => p.label -> config.fieldNameMapper(p.label)
+        case None => p.label -> config.fieldNameMapper(p.label)
       }
     }.toMap
 
@@ -52,17 +53,22 @@ object EncoderDerivation {
       )
     }
 
-    (a: T) =>
-    {
-      val doc = new BsonDocument()
-      caseClass.parameters.foreach { p =>
-        val label = paramsLookup.getOrElse(
-          p.label,
-          throw new IllegalStateException(
-            "Looking up a parameter label should always yield a value. This is a derivation bug"))
-        doc.put(label, p.typeclass(p.dereference(a)))
+    (a: T) => {
+      if (caseClass.isValueClass) {
+        // encode it as an internal value
+        val param = caseClass.parameters.head
+        param.typeclass(param.dereference(a))
+      } else {
+        val doc = new BsonDocument()
+        caseClass.parameters.foreach { p =>
+          val label = paramsLookup.getOrElse(
+            p.label,
+            throw new IllegalStateException(
+              "Looking up a parameter label should always yield a value. This is a derivation bug"))
+          doc.put(label, p.typeclass(p.dereference(a)))
+        }
+        doc
       }
-      doc
     }
   }
 
