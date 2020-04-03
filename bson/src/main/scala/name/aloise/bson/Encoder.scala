@@ -2,7 +2,9 @@ package name.aloise.bson
 
 import org.bson.BsonValue
 import magnolia._
+import name.aloise.bson.utils.FieldMappings
 import org.bson._
+
 import scala.language.experimental.macros
 
 
@@ -31,26 +33,12 @@ object Encoder extends LowPrioEncoders {
   def apply[T : Encoder](a: T): BsonValue = implicitly[Encoder[T]].apply(a)
 }
 
-object EncoderDerivation {
+object EncoderDerivation extends FieldMappings {
   type Typeclass[T] = Encoder[T]
 
   def combine[T](caseClass: CaseClass[Typeclass, T])(
     implicit config: Configuration): Typeclass[T] = {
-    val paramsLookup = caseClass.parameters.map { p =>
-      val keyAnnotation = p.annotations.collectFirst {
-        case ann: Key => ann
-      }
-      keyAnnotation match {
-        case Some(ann) => p.label -> ann.value
-        case None => p.label -> config.fieldNameMapper(p.label)
-      }
-    }.toMap
-
-    if (paramsLookup.values.toSet.size != caseClass.parameters.length) {
-      throw new IllegalStateException(
-        s"Duplicate key detected after applying field name mapper function for case class parameters: $paramsLookup"
-      )
-    }
+    val paramsLookup = getFieldNameMappings[Typeclass, T](caseClass)
 
     (a: T) => {
       if (caseClass.isValueClass) {
@@ -60,10 +48,7 @@ object EncoderDerivation {
       } else {
         val doc = new BsonDocument()
         caseClass.parameters.foreach { p =>
-          val label = paramsLookup.getOrElse(
-            p.label,
-            throw new IllegalStateException(
-              "Looking up a parameter label should always yield a value. This is a derivation bug"))
+          val label = paramsLookup(p.label)
           doc.put(label, p.typeclass(p.dereference(a)))
         }
         doc
