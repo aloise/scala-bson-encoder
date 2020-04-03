@@ -4,7 +4,6 @@ import org.bson.BsonValue
 import magnolia._
 import name.aloise.bson.utils.FieldMappings
 import org.bson._
-
 import scala.language.experimental.macros
 
 
@@ -22,18 +21,16 @@ trait LowPrioEncoders {
   implicit val doubleEncoder: Encoder[Double] = new BsonDouble(_)
   implicit val boolEncoder: Encoder[Boolean] = new BsonBoolean(_)
   implicit val byteArrayEncoder: Encoder[Array[Byte]] = new BsonBinary(_)
-//  implicit def anyValEncoder[A: Encoder, T <: AnyVal](implicit generic: Generic.Aux[T, A :: HNil]): Encoder[T] = (a: T) => Encoder(generic.to(a).head)
   implicit def optionEncoder[A : Encoder]: Encoder[Option[A]] = (a: Option[A]) =>
     a.fold[BsonValue](new BsonNull)(Encoder[A])
   implicit def iterableEncoder[A : Encoder]: Encoder[Iterable[A]] = (a: Iterable[A]) =>
     new BsonArray(a.map(Encoder[A]).toList.asJava)
 }
 
-object Encoder extends LowPrioEncoders {
-  def apply[T : Encoder](a: T): BsonValue = implicitly[Encoder[T]].apply(a)
-}
+object Encoder extends LowPrioEncoders with FieldMappings {
 
-object EncoderDerivation extends FieldMappings {
+  def apply[T : Encoder](a: T): BsonValue = implicitly[Encoder[T]].apply(a)
+
   type Typeclass[T] = Encoder[T]
 
   def combine[T](caseClass: CaseClass[Typeclass, T])(
@@ -94,7 +91,6 @@ object EncoderDerivation extends FieldMappings {
           new BsonString(className))
         outputDocWithoutTypeDiscriminator
       }
-
   }
 
   implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]

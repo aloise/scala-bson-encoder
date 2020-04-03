@@ -1,18 +1,17 @@
 package name.aloise
 
 import name.aloise.bson._
-import name.aloise.bson.EncoderDerivation.gen
 import org.mongodb.scala.bson.BsonInt64
 
 object Main extends App {
 
   final class ObjectId(val id: Int) extends AnyVal
 
-  val anyValEncoder: Encoder[ObjectId] = gen[ObjectId]
+  val anyValEncoder: Encoder[ObjectId] = Encoder.gen[ObjectId]
 
   case class Test1(name: String, value2: Int)
 
-  val encoder: Encoder[Test1] = EncoderDerivation.gen[Test1]
+  val encoder: Encoder[Test1] = Encoder.gen[Test1]
 
   sealed trait AdtTest
   case class AdtTest1(name: String) extends AdtTest
@@ -24,7 +23,7 @@ object Main extends App {
   implicit def encAdtTest4Primitive: Encoder[AdtTest4Primitive] =
     (a: AdtTest4Primitive) => new BsonInt64(a.x)
 
-  val adtEncoder: Encoder[AdtTest] = EncoderDerivation.gen[AdtTest]
+  val adtEncoder: Encoder[AdtTest] = Encoder.gen[AdtTest]
 
   println(encoder(Test1("Hello World", 2)))
   println(adtEncoder(AdtTest1("Hello World")))

@@ -2,12 +2,13 @@ package name.aloise.bson
 
 import cats.data.{Validated, ValidatedNec}
 import mercator.Monadic
-import magnolia.CaseClass
+import magnolia.{CaseClass, Magnolia}
 import name.aloise.bson.Decoder.DecodedResult
 import cats.data.Validated._
 import name.aloise.bson.utils.FieldMappings
 import org.bson.BsonValue
 import org.mongodb.scala.bson.BsonDocument
+import scala.language.experimental.macros
 
 sealed trait DecoderError
 case class FieldWasNotFoundInBsonDocument(bson: BsonDocument, mappedFieldName: String, fieldName: String) extends DecoderError
@@ -18,7 +19,7 @@ trait Decoder[+T] {
 }
 
 object Decoder {
-  type DecodedResult[+T] = ValidatedNec[DecoderError, T]
+  type DecodedResult[+T] = Validated[DecoderError, T]
 
   def apply[T : Decoder](a: BsonValue): DecodedResult[T] = implicitly[Decoder[T]].apply(a)
 }
@@ -26,9 +27,19 @@ object Decoder {
 object DecoderDerivation extends FieldMappings {
   type Typeclass[T] = Decoder[T]
 
-  protected implicit def monadicValidated[T]: Monadic[DecodedResult] = ???
+  protected implicit def monadicValidated[T]: Monadic[DecodedResult] = new Monadic[DecodedResult] {
+    override def point[A](value: A): DecodedResult[A] = valid(value)
 
-  def combine[T](caseClass: CaseClass[Typeclass, T])(
+    override def flatMap[A, B](from: DecodedResult[A])(fn: A => DecodedResult[B]): DecodedResult[B] =
+      from match {
+        case Valid(value) => fn(value)
+        case Invalid(err) => invalid(err)
+      }
+
+    override def map[A, B](from: DecodedResult[A])(fn: A => B): DecodedResult[B] = from.map(fn)
+  }
+
+  private def combine[T](caseClass: CaseClass[Typeclass, T])(
     implicit config: Configuration): Typeclass[T] = {
     val paramsLookup = getFieldNameMappings[Typeclass, T](caseClass)
     (b: BsonValue) =>
@@ -42,13 +53,15 @@ object DecoderDerivation extends FieldMappings {
             case Some(value) =>
               Decoder[p.PType](value)(p.typeclass)
             case None if p.default.isDefined =>
-              validNec(p.default.get)
+              valid(p.default.get)
             case _ =>
-              invalidNec(FieldWasNotFoundInBsonDocument(doc, key, p.label))
+              invalid(FieldWasNotFoundInBsonDocument(doc, key, p.label))
           }
         case _ =>
-          invalidNec(UnableToDecodeBsonAsCaseClass(b, caseClass.typeName.full))
+          invalid(UnableToDecodeBsonAsCaseClass(b, caseClass.typeName.full))
       }
     }
   }
+
+  implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]
 }
