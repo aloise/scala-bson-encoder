@@ -16,6 +16,8 @@ object Main extends App {
   case class AdtTest4Primitive(x: Long) extends AdtTest
   case object AdtObject extends AdtTest
 
+  implicit val adtEncoder = implicitly[Encoder[AdtTest]]
+
   // custom encoder
   implicit def encAdtTest4Primitive: Encoder[AdtTest4Primitive] = (a: AdtTest4Primitive) => new BsonInt64(a.x)
 
@@ -26,8 +28,10 @@ object Main extends App {
   println((AdtObject).toBson)
   println((new ObjectId(4)).toBson)
 
-  // Decoders
+  // Adt Encoder
+  println(adtEncoder(AdtTest1("Hello World")))
 
+  // Decoders
   println(Test1("Hello World", 2).toBson)
 
 }
