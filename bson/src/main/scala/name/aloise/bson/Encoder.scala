@@ -11,13 +11,12 @@ trait Encoder[-T] {
   def apply(a: T): BsonValue
 }
 
-trait LowPrioEncoders {
+trait LowestPrioEncoders {
+  implicit def bsonValueEncoder[T <: BsonValue]: Encoder[T] = (bson: T) => bson
+}
 
-  implicit class ToBson[T : Encoder](a: T) {
-    def toBson: BsonValue = Encoder[T](a)
-  }
-
-//  import shapeless._
+trait LowPrioEncoders extends LowestPrioEncoders {
+  // import shapeless._
   import scala.jdk.CollectionConverters._
 
   implicit val stringEncoder: Encoder[String] = new BsonString(_)
@@ -34,6 +33,9 @@ trait LowPrioEncoders {
 
 object Encoder extends LowPrioEncoders with FieldMappings {
 
+  implicit class ToBson[T : Encoder](a: T) {
+    def toBson: BsonValue = Encoder[T](a)
+  }
   def apply[T : Encoder](a: T): BsonValue = implicitly[Encoder[T]].apply(a)
 
   type Typeclass[T] = Encoder[T]

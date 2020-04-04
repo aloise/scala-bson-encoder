@@ -1,17 +1,20 @@
 package name.aloise.bson
 
-import cats.data.Validated
-import mercator.Monadic
-import magnolia.{CaseClass, Magnolia, SealedTrait}
-import name.aloise.bson.Decoder.DecodedResult
 import cats.data.Validated._
+import cats.data.ValidatedNec
+import magnolia.{CaseClass, Magnolia, SealedTrait}
+import mercator.Monadic
+import name.aloise.bson.Decoder.DecodedResult
 import name.aloise.bson.utils.FieldMappings
 import org.bson._
 
+import scala.collection.IterableFactory
 import scala.language.experimental.macros
 
 sealed trait DecoderError
 trait AdtDecodeError extends DecoderError
+case class PrimitiveDecoderFailed(b: BsonValue, primitiveTypeClassName: String) extends DecoderError
+case class BsonArrayDecoderFailed(notBsonArray: BsonValue) extends DecoderError
 case class FieldWasNotFoundInBsonDocument(bson: BsonDocument, mappedFieldName: String, fieldName: String) extends DecoderError
 case class UnableToDecodeBsonAsCaseClass(bson: BsonValue, className: String) extends DecoderError
 case class DiscriminatorFieldIsMissing(bson: BsonDocument, discriminatorFieldName: String) extends AdtDecodeError
@@ -19,22 +22,78 @@ case class DiscriminatorFieldContainsNonStringValue(bson: BsonDocument, discrimi
 case class AdtCaseClassCanNotBeDecodedFromBsonValue(bson: BsonValue, sealedTraitName: String) extends AdtDecodeError
 case class AdtCaseClassNameWasNotFound(caseClassName: String, knownCaseClassNames: Set[String]) extends AdtDecodeError
 
+
 trait Decoder[+T] {
   def apply(a: BsonValue): DecodedResult[T]
 }
 
-trait LowPrioDecoders {
-  implicit class FromBson(bson: BsonValue) {
-    def fromBson[T : Decoder]: DecodedResult[T] = Decoder[T](bson)
+trait LowestPrioDecoders {
+  import scala.jdk.CollectionConverters._
+  implicit def iterableDecoder[T[_] : IterableFactory, A : Decoder]: Decoder[T[A]] = {
+    case arr: BsonArray =>
+      import cats.implicits._
+
+      val mapped: DecodedResult[List[A]] = arr.getValues.asScala.map(Decoder[A]).toList.sequence
+      mapped.map {
+        implicitly[IterableFactory[T]].from
+      }
+    case value => invalidNec(BsonArrayDecoderFailed(value))
   }
 }
 
-object Decoder extends LowPrioDecoders {
-  type DecodedResult[+T] = Validated[DecoderError, T]
-  def apply[T : Decoder](a: BsonValue): DecodedResult[T] = implicitly[Decoder[T]].apply(a)
+trait LowPrioDecoders extends LowestPrioDecoders {
+
+
+  implicit val stringDecoder: Decoder[String] = {
+    case value: BsonString => valid(value.getValue)
+    case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[String].getName))
+  }
+  implicit val intDecoder: Decoder[Int] = {
+    case value: BsonInt32 => valid(value.getValue)
+    case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[Int].getName))
+  }
+  implicit val longDecoder: Decoder[Long] = {
+    case value: BsonInt32 => valid(value.getValue)
+    case value: BsonInt64 => valid(value.getValue)
+    case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[Long].getName))
+  }
+  implicit val doubleDecoder: Decoder[Double] = {
+    case str: BsonNumber => valid(str.doubleValue())
+    case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[Double].getName))
+  }
+
+  implicit val bigDecimalDecoder: Decoder[BigDecimal] = {
+    case str: BsonNumber => valid(BigDecimal(str.decimal128Value.bigDecimalValue()))
+    case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[BigDecimal].getName))
+  }
+
+  implicit val boolDecoder: Decoder[Boolean] = {
+    case value: BsonBoolean => valid(value.getValue)
+    case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[Boolean].getName))
+  }
+
+  implicit val byteArrayDecoder: Decoder[Array[Byte]] = {
+    case blob: BsonBinary => valid(blob.getData)
+    case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[Array[Byte]].getName))
+  }
+
+  implicit def optionDecoder[A : Decoder]: Decoder[Option[A]] = {
+    case _: BsonNull => valid(None)
+    case value: BsonValue => Decoder[A](value).map(Option(_))
+  }
+
 }
 
-object DecoderDerivation extends FieldMappings {
+object Decoder extends LowPrioDecoders with FieldMappings {
+
+  implicit class FromBson(bson: BsonValue) {
+    def as[T : Decoder]: DecodedResult[T] = Decoder[T](bson)
+  }
+
+  type DecodedResult[+T] = ValidatedNec[DecoderError, T]
+
+  def apply[T : Decoder](a: BsonValue): DecodedResult[T] = implicitly[Decoder[T]].apply(a)
+
   type Typeclass[T] = Decoder[T]
 
   protected implicit def monadicValidated[T]: Monadic[DecodedResult] = new Monadic[DecodedResult] {
@@ -49,8 +108,7 @@ object DecoderDerivation extends FieldMappings {
     override def map[A, B](from: DecodedResult[A])(fn: A => B): DecodedResult[B] = from.map(fn)
   }
 
-  private def combine[T](caseClass: CaseClass[Typeclass, T])(
-    implicit config: Configuration): Typeclass[T] = {
+  def combine[T](caseClass: CaseClass[Typeclass, T])(implicit config: Configuration): Typeclass[T] = {
     val paramsLookup = getFieldNameMappings[Typeclass, T](caseClass)
     (bson: BsonValue) =>
     caseClass.constructMonadic { p =>
@@ -65,10 +123,10 @@ object DecoderDerivation extends FieldMappings {
             case None if p.default.isDefined =>
               valid(p.default.get)
             case _ =>
-              invalid(FieldWasNotFoundInBsonDocument(doc, key, p.label))
+              invalidNec(FieldWasNotFoundInBsonDocument(doc, key, p.label))
           }
         case _ =>
-          invalid(UnableToDecodeBsonAsCaseClass(bson, caseClass.typeName.full))
+          invalidNec(UnableToDecodeBsonAsCaseClass(bson, caseClass.typeName.full))
       }
     }
   }
@@ -91,14 +149,14 @@ object DecoderDerivation extends FieldMappings {
               case valid => valid
             }
           case str: BsonString =>
-            invalid(AdtCaseClassNameWasNotFound(str.getValue, lookup.keySet))
+            invalidNec(AdtCaseClassNameWasNotFound(str.getValue, lookup.keySet))
           case other =>
-            invalid(DiscriminatorFieldContainsNonStringValue(doc, config.discriminatorFieldName, other))
+            invalidNec(DiscriminatorFieldContainsNonStringValue(doc, config.discriminatorFieldName, other))
         }
       case doc: BsonDocument =>
-        invalid(DiscriminatorFieldIsMissing(doc, config.discriminatorFieldName))
+        invalidNec(DiscriminatorFieldIsMissing(doc, config.discriminatorFieldName))
       case _ =>
-        invalid(AdtCaseClassCanNotBeDecodedFromBsonValue(bson, sealedTrait.typeName.full))
+        invalidNec(AdtCaseClassCanNotBeDecodedFromBsonValue(bson, sealedTrait.typeName.full))
     }
   }
 

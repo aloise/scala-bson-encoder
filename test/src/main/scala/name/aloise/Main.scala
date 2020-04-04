@@ -1,8 +1,9 @@
 package name.aloise
 
 import name.aloise.bson._
-import org.mongodb.scala.bson.BsonInt64
+import org.mongodb.scala.bson.{BsonInt64, BsonString}
 import name.aloise.bson.Encoder._
+import name.aloise.bson.Decoder._
 
 object Main extends App {
 
@@ -34,4 +35,7 @@ object Main extends App {
   // Decoders
   println(Test1("Hello World", 2).toBson)
 
+  val decoder = implicitly[Decoder[Test1]](Decoder.gen[Test1])
+
+  println(Test1("Hello World", 2).toBson.as[Test1])
 }
