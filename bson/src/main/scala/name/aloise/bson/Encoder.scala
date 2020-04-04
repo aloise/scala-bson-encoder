@@ -1,9 +1,13 @@
 package name.aloise.bson
 
+import java.time.{LocalDate, LocalDateTime, ZoneId}
+
+import cats.Contravariant
 import org.bson.BsonValue
 import magnolia._
 import name.aloise.bson.utils.FieldMappings
 import org.bson._
+
 import scala.language.experimental.macros
 
 
@@ -13,17 +17,24 @@ trait Encoder[-T] {
 
 trait LowestPrioEncoders {
   implicit def bsonValueEncoder[T <: BsonValue]: Encoder[T] = (bson: T) => bson
+
+  implicit val encoderFunctor: Contravariant[Encoder]= new Contravariant[Encoder] {
+    override def contramap[A, B](fa: Encoder[A])(f: B => A): Encoder[B] = (a: B) => fa(f(a))
+  }
 }
 
 trait LowPrioEncoders extends LowestPrioEncoders {
-  // import shapeless._
+  import cats.implicits._
   import scala.jdk.CollectionConverters._
 
   implicit val stringEncoder: Encoder[String] = new BsonString(_)
   implicit val intEncoder: Encoder[Int] = new BsonInt32(_)
   implicit val longEncoder: Encoder[Long] = new BsonInt64(_)
   implicit val doubleEncoder: Encoder[Double] = new BsonDouble(_)
+  implicit val localDateTimeEncoder: Encoder[LocalDateTime] = (d: LocalDateTime) => new BsonDateTime(d.atZone(ZoneId.of("UTC")).toInstant.toEpochMilli)
+  implicit val localDateEncoder: Encoder[LocalDate] = localDateTimeEncoder.contramap(LocalDateTime.from)
   implicit val boolEncoder: Encoder[Boolean] = new BsonBoolean(_)
+
   implicit val byteArrayEncoder: Encoder[Array[Byte]] = new BsonBinary(_)
   implicit def optionEncoder[A : Encoder]: Encoder[Option[A]] = (a: Option[A]) =>
     a.fold[BsonValue](new BsonNull)(Encoder[A])
