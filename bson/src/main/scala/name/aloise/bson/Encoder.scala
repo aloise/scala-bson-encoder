@@ -12,6 +12,11 @@ trait Encoder[-T] {
 }
 
 trait LowPrioEncoders {
+
+  implicit class ToBson[T : Encoder](a: T) {
+    def toBson: BsonValue = Encoder[T](a)
+  }
+
 //  import shapeless._
   import scala.jdk.CollectionConverters._
 
@@ -53,30 +58,19 @@ object Encoder extends LowPrioEncoders with FieldMappings {
     }
   }
 
-  def dispatch[T](sealedTrait: SealedTrait[Typeclass, T])(
-    implicit config: Configuration): Typeclass[T] = {
-    {
-      val origTypeNames = sealedTrait.subtypes.map(_.typeName.short)
-      val transformed = origTypeNames.map(config.adtClassNameMapper).distinct
-      if (transformed.length != origTypeNames.length) {
-        throw new IllegalStateException(
-          "Duplicate key detected after applying class name mapper function for " +
-            "sealed trait child classes"
-        )
-      }
-    }
+  def dispatch[T](sealedTrait: SealedTrait[Typeclass, T])(implicit config: Configuration): Typeclass[T] = {
+    constructorLookup(sealedTrait)
     (a: T) =>
       sealedTrait.dispatch(a) { subtype =>
         val baseBson = subtype.typeclass(subtype.cast(a))
         val className = config.adtClassNameMapper(subtype.typeName.short)
         val outputDocWithoutTypeDiscriminator =
           baseBson match {
-            case doc: BsonDocument if (doc.containsKey(config.discriminatorFieldName)) =>
+            case doc: BsonDocument if doc.containsKey(config.discriminatorFieldName) =>
               // It was encoded as a document, we are injecting the discriminator field
               // field name clashes with discriminator field
               throw new IllegalArgumentException(
-                s"Can't inject the discriminator field '${config.discriminatorFieldName}'. The field with the same name already exists in the object."
-              )
+                s"Can't inject the discriminator field '${config.discriminatorFieldName}'. The field with the same name already exists in the object.")
 
             case doc: BsonDocument =>
               doc
@@ -87,8 +81,7 @@ object Encoder extends LowPrioEncoders with FieldMappings {
               wrappingDoc.put(config.adtPrimitiveValueFieldName, baseBson)
               wrappingDoc
           }
-        outputDocWithoutTypeDiscriminator.put(config.discriminatorFieldName,
-          new BsonString(className))
+        outputDocWithoutTypeDiscriminator.put(config.discriminatorFieldName, new BsonString(className))
         outputDocWithoutTypeDiscriminator
       }
   }
