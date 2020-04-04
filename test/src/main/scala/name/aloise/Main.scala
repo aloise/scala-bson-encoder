@@ -35,7 +35,6 @@ object Main extends App {
   // Decoders
   println(Test1("Hello World", 2).toBson)
 
-  val decoder = implicitly[Decoder[Test1]](Decoder.gen[Test1])
-
   println(Test1("Hello World", 2).toBson.as[Test1])
+  println((AdtTest3(List("Hello World", "Hello Again"), None, Test1("name1", Int.MaxValue))).toBson.as[AdtTest3])
 }
