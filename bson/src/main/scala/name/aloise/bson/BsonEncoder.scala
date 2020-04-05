@@ -11,15 +11,15 @@ import org.bson._
 import scala.language.experimental.macros
 
 
-trait Encoder[-T] {
+trait BsonEncoder[-T] {
   def apply(a: T): BsonValue
 }
 
 trait LowestPrioEncoders {
-  implicit def bsonValueEncoder[T <: BsonValue]: Encoder[T] = (bson: T) => bson
+  implicit def bsonValueEncoder[T <: BsonValue]: BsonEncoder[T] = (bson: T) => bson
 
-  implicit val encoderFunctor: Contravariant[Encoder]= new Contravariant[Encoder] {
-    override def contramap[A, B](fa: Encoder[A])(f: B => A): Encoder[B] = (a: B) => fa(f(a))
+  implicit val encoderFunctor: Contravariant[BsonEncoder]= new Contravariant[BsonEncoder] {
+    override def contramap[A, B](fa: BsonEncoder[A])(f: B => A): BsonEncoder[B] = (a: B) => fa(f(a))
   }
 }
 
@@ -27,33 +27,34 @@ trait LowPrioEncoders extends LowestPrioEncoders {
   import cats.implicits._
   import scala.jdk.CollectionConverters._
 
-  implicit val stringEncoder: Encoder[String] = new BsonString(_)
-  implicit val intEncoder: Encoder[Int] = new BsonInt32(_)
-  implicit val longEncoder: Encoder[Long] = new BsonInt64(_)
-  implicit val doubleEncoder: Encoder[Double] = new BsonDouble(_)
-  implicit val localDateTimeEncoder: Encoder[LocalDateTime] = (d: LocalDateTime) => new BsonDateTime(d.atZone(ZoneId.of("UTC")).toInstant.toEpochMilli)
-  implicit val localDateEncoder: Encoder[LocalDate] = localDateTimeEncoder.contramap(LocalDateTime.from)
-  implicit val boolEncoder: Encoder[Boolean] = new BsonBoolean(_)
+  implicit val stringEncoder: BsonEncoder[String] = new BsonString(_)
+  implicit val intEncoder: BsonEncoder[Int] = new BsonInt32(_)
+  implicit val longEncoder: BsonEncoder[Long] = new BsonInt64(_)
+  implicit val doubleEncoder: BsonEncoder[Double] = new BsonDouble(_)
+  implicit val localDateTimeEncoder: BsonEncoder[LocalDateTime] = (d: LocalDateTime) => new BsonDateTime(d.atZone(ZoneId.of("UTC")).toInstant.toEpochMilli)
+  implicit val localDateEncoder: BsonEncoder[LocalDate] = localDateTimeEncoder.contramap(LocalDateTime.from)
+  implicit val boolEncoder: BsonEncoder[Boolean] = new BsonBoolean(_)
 
-  implicit val byteArrayEncoder: Encoder[Array[Byte]] = new BsonBinary(_)
-  implicit def optionEncoder[A : Encoder]: Encoder[Option[A]] = (a: Option[A]) =>
-    a.fold[BsonValue](new BsonNull)(Encoder[A])
-  implicit def iterableEncoder[A : Encoder]: Encoder[Iterable[A]] = (a: Iterable[A]) =>
-    new BsonArray(a.map(Encoder[A]).toList.asJava)
+  implicit val byteArrayEncoder: BsonEncoder[Array[Byte]] = new BsonBinary(_)
+  implicit def optionEncoder[A : BsonEncoder]: BsonEncoder[Option[A]] = (a: Option[A]) =>
+    a.fold[BsonValue](new BsonNull)(BsonEncoder[A])
+  implicit def iterableEncoder[A : BsonEncoder]: BsonEncoder[Iterable[A]] = (a: Iterable[A]) =>
+    new BsonArray(a.map(BsonEncoder[A]).toList.asJava)
 }
 
-object Encoder extends LowPrioEncoders with FieldMappings {
-
-  implicit class ToBson[T : Encoder](a: T) {
-    def toBson: BsonValue = Encoder[T](a)
+object BsonEncoder {
+  implicit class ToBson[T : BsonEncoder](a: T) {
+    def toBson: BsonValue = BsonEncoder[T](a)
   }
-  def apply[T : Encoder](a: T): BsonValue = implicitly[Encoder[T]].apply(a)
 
-  type Typeclass[T] = Encoder[T]
+  def apply[T : BsonEncoder](a: T): BsonValue = implicitly[BsonEncoder[T]].apply(a)
+}
 
-  def combine[T](caseClass: CaseClass[Typeclass, T])(
-    implicit config: Configuration): Typeclass[T] = {
-    val paramsLookup = getFieldNameMappings[Typeclass, T](caseClass)
+trait BsonEncoderDerivation extends LowPrioEncoders with FieldMappings {
+
+  def combine[T](caseClass: CaseClass[BsonEncoder, T])(
+    implicit config: Configuration): BsonEncoder[T] = {
+    val paramsLookup = getFieldNameMappings[BsonEncoder, T](caseClass)
 
     (a: T) => {
       if (caseClass.isValueClass) {
@@ -71,7 +72,7 @@ object Encoder extends LowPrioEncoders with FieldMappings {
     }
   }
 
-  def dispatch[T](sealedTrait: SealedTrait[Typeclass, T])(implicit config: Configuration): Typeclass[T] = {
+  def dispatch[T](sealedTrait: SealedTrait[BsonEncoder, T])(implicit config: Configuration): BsonEncoder[T] = {
     constructorLookup(sealedTrait)
     (a: T) =>
       sealedTrait.dispatch(a) { subtype =>
@@ -99,6 +100,6 @@ object Encoder extends LowPrioEncoders with FieldMappings {
       }
   }
 
-  implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]
+//  implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]
 }
 

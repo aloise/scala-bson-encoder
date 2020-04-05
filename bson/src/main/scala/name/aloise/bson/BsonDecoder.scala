@@ -2,18 +2,14 @@ package name.aloise.bson
 
 import java.time.{Instant, LocalDate, LocalDateTime, LocalTime, ZoneId}
 
-import cats.{Applicative, Functor}
+import cats.Functor
 import cats.data.Validated._
 import cats.data.ValidatedNec
-import cats.kernel.Monoid
-import magnolia.{CaseClass, Magnolia, SealedTrait}
+import magnolia.{CaseClass, SealedTrait}
 import mercator.Monadic
-import name.aloise.bson.Decoder.DecodedResult
+import name.aloise.bson.BsonDecoder.DecodedResult
 import name.aloise.bson.utils.FieldMappings
 import org.bson._
-
-import scala.collection.IterableFactory
-import scala.language.experimental.macros
 import scala.reflect.ClassTag
 
 sealed trait DecoderError
@@ -28,14 +24,14 @@ case class AdtCaseClassCanNotBeDecodedFromBsonValue(bson: BsonValue, sealedTrait
 case class AdtCaseClassNameWasNotFound(caseClassName: String, knownCaseClassNames: Set[String]) extends AdtDecodeError
 
 
-trait Decoder[T] {
+trait BsonDecoder[T] {
   def apply(a: BsonValue): DecodedResult[T]
 }
 
 trait LowestPrioDecoders {
 
-  implicit val applicative: Functor[Decoder] = new Functor[Decoder] {
-    override def map[A, B](fa: Decoder[A])(f: A => B): Decoder[B] = (a: BsonValue) => fa(a).map(f)
+  implicit val applicative: Functor[BsonDecoder] = new Functor[BsonDecoder] {
+    override def map[A, B](fa: BsonDecoder[A])(f: A => B): BsonDecoder[B] = (a: BsonValue) => fa(a).map(f)
   }
 
   import scala.jdk.CollectionConverters._
@@ -59,77 +55,77 @@ trait LowestPrioDecoders {
 trait LowPrioDecoders extends LowestPrioDecoders {
   import cats.implicits._
 
-  protected def primitiveDecoder[T <: BsonValue { def getValue(): V } : ClassTag, V : ClassTag]: Decoder[V] = {
+  protected def primitiveDecoder[T <: BsonValue { def getValue(): V } : ClassTag, V : ClassTag]: BsonDecoder[V] = {
     case value: T => valid(value.getValue())
     case other => invalidNec(PrimitiveDecoderFailed(other, implicitly[ClassTag[T]].runtimeClass.getName))
   }
 
-  implicit val stringDecoder: Decoder[String] = primitiveDecoder[BsonString, String]
-  implicit val intDecoder: Decoder[Int] = primitiveDecoder[BsonInt32, Int]
+  implicit val stringDecoder: BsonDecoder[String] = primitiveDecoder[BsonString, String]
+  implicit val intDecoder: BsonDecoder[Int] = primitiveDecoder[BsonInt32, Int]
 
-  implicit val longDecoder: Decoder[Long] = {
+  implicit val longDecoder: BsonDecoder[Long] = {
     case value: BsonInt32 => valid(value.getValue)
     case value: BsonInt64 => valid(value.getValue)
     case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[Long].getName))
   }
 
-  implicit val doubleDecoder: Decoder[Double] = primitiveDecoder[BsonDouble, Double]
+  implicit val doubleDecoder: BsonDecoder[Double] = primitiveDecoder[BsonDouble, Double]
 
-  implicit val localDateTimeDecoder: Decoder[LocalDateTime] = {
+  implicit val localDateTimeDecoder: BsonDecoder[LocalDateTime] = {
     case t: BsonDateTime => valid(Instant.ofEpochMilli(t.getValue).atZone(ZoneId.of("UTC")).toLocalDateTime)
     case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[LocalDateTime].getName))
   }
 
-  implicit val instantDecoder: Decoder[Instant] = {
+  implicit val instantDecoder: BsonDecoder[Instant] = {
     case t: BsonDateTime => valid(Instant.ofEpochMilli(t.getValue)) // time in millis
     case t: BsonTimestamp => valid(Instant.ofEpochMilli(t.getValue*1000)) // time in seconds
     case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[LocalDateTime].getName))
   }
 
-  implicit val localDateDecoder: Decoder[LocalDate] = localDateTimeDecoder.map(_.toLocalDate)
-  implicit val localTimeDecoder: Decoder[LocalTime] = localDateTimeDecoder.map(_.toLocalTime)
+  implicit val localDateDecoder: BsonDecoder[LocalDate] = localDateTimeDecoder.map(_.toLocalDate)
+  implicit val localTimeDecoder: BsonDecoder[LocalTime] = localDateTimeDecoder.map(_.toLocalTime)
 
-  implicit val bigDecimalDecoder: Decoder[BigDecimal] = {
+  implicit val bigDecimalDecoder: BsonDecoder[BigDecimal] = {
     case str: BsonNumber => valid(BigDecimal(str.decimal128Value.bigDecimalValue()))
     case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[BigDecimal].getName))
   }
 
-  implicit val boolDecoder: Decoder[Boolean] = primitiveDecoder[BsonBoolean, Boolean]
+  implicit val boolDecoder: BsonDecoder[Boolean] = primitiveDecoder[BsonBoolean, Boolean]
 
-  implicit val byteArrayDecoder: Decoder[Array[Byte]] = {
+  implicit val byteArrayDecoder: BsonDecoder[Array[Byte]] = {
     case blob: BsonBinary => valid(blob.getData)
     case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[Array[Byte]].getName))
   }
 
-  implicit def optionDecoder[A : Decoder]: Decoder[Option[A]] = {
+  implicit def optionDecoder[A : BsonDecoder]: BsonDecoder[Option[A]] = {
     case _: BsonNull => valid(None)
-    case value: BsonValue => Decoder[A](value).map(Option(_))
+    case value: BsonValue => BsonDecoder[A](value).map(Option(_))
   }
 
-  implicit def listDecoder[A : Decoder]: Decoder[List[A]] = {
+  implicit def listDecoder[A : BsonDecoder]: BsonDecoder[List[A]] = {
     case arr: BsonArray =>
       import cats.implicits._
       import scala.jdk.CollectionConverters._
-      arr.getValues.asScala.map(Decoder[A]).toList.sequence
+      arr.getValues.asScala.map(BsonDecoder[A]).toList.sequence
     case value => invalidNec(BsonArrayDecoderFailed(value))
   }
 
-  implicit def setDecoder[A : Decoder]: Decoder[Set[A]] = listDecoder[A].map(_.toSet)
-  implicit def vectorDecoder[A : Decoder]: Decoder[Vector[A]] = listDecoder[A].map(_.toVector)
+  implicit def setDecoder[A : BsonDecoder]: BsonDecoder[Set[A]] = listDecoder[A].map(_.toSet)
+  implicit def vectorDecoder[A : BsonDecoder]: BsonDecoder[Vector[A]] = listDecoder[A].map(_.toVector)
 
 }
 
-object Decoder extends LowPrioDecoders with FieldMappings {
-
+object BsonDecoder {
   implicit class FromBson(bson: BsonValue) {
-    def as[T : Decoder]: DecodedResult[T] = Decoder[T](bson)
+    def as[T : BsonDecoder]: DecodedResult[T] = BsonDecoder[T](bson)
   }
 
   type DecodedResult[+T] = ValidatedNec[DecoderError, T]
 
-  def apply[T : Decoder](a: BsonValue): DecodedResult[T] = implicitly[Decoder[T]].apply(a)
+  def apply[T : BsonDecoder](a: BsonValue): DecodedResult[T] = implicitly[BsonDecoder[T]].apply(a)
+}
 
-  type Typeclass[T] = Decoder[T]
+trait BsonDecoderDerivation extends LowPrioDecoders with FieldMappings {
 
   protected implicit def monadicValidated[T]: Monadic[DecodedResult] = new Monadic[DecodedResult] {
     override def point[A](value: A): DecodedResult[A] = valid(value)
@@ -143,18 +139,18 @@ object Decoder extends LowPrioDecoders with FieldMappings {
     override def map[A, B](from: DecodedResult[A])(fn: A => B): DecodedResult[B] = from.map(fn)
   }
 
-  def combine[T](caseClass: CaseClass[Typeclass, T])(implicit config: Configuration): Typeclass[T] = {
-    val paramsLookup = getFieldNameMappings[Typeclass, T](caseClass)
+  def combine[T](caseClass: CaseClass[BsonDecoder, T])(implicit config: Configuration): BsonDecoder[T] = {
+    val paramsLookup = getFieldNameMappings[BsonDecoder, T](caseClass)
     (bson: BsonValue) =>
     caseClass.constructMonadic { p =>
       val key = paramsLookup(p.label)
       bson match {
         case b: BsonValue if caseClass.isValueClass =>
-          Decoder[p.PType](b)(p.typeclass)
+          BsonDecoder[p.PType](b)(p.typeclass)
         case doc: BsonDocument =>
           Option(doc.get(key)) match {
             case Some(value) =>
-              Decoder[p.PType](value)(p.typeclass)
+              BsonDecoder[p.PType](value)(p.typeclass)
             case None if p.default.isDefined =>
               valid(p.default.get)
             case _ =>
@@ -166,20 +162,20 @@ object Decoder extends LowPrioDecoders with FieldMappings {
     }
   }
 
-  def dispatch[T](sealedTrait: SealedTrait[Typeclass, T])(implicit config: Configuration): Typeclass[T] = {
-    val lookup = constructorLookup[Typeclass, T](sealedTrait)
+  def dispatch[T](sealedTrait: SealedTrait[BsonDecoder, T])(implicit config: Configuration): BsonDecoder[T] = {
+    val lookup = constructorLookup[BsonDecoder, T](sealedTrait)
     (bson: BsonValue) => bson match {
       case doc: BsonDocument if doc.containsKey(config.discriminatorFieldName) =>
         doc.get(config.discriminatorFieldName) match {
           case str: BsonString if lookup.contains(str.getValue) =>
             val constructor = lookup(str.getValue)
-            Decoder[constructor.SType](doc)(constructor.typeclass) match {
+            BsonDecoder[constructor.SType](doc)(constructor.typeclass) match {
               case err@Invalid(_) =>
                 // Trying to decode the primitive value
                 // TODO - find a better way to encode primitive values from custom case class encoders
                 Option(doc.get(config.adtPrimitiveValueFieldName)) match {
                   case None => err //
-                  case Some(value) => Decoder[constructor.SType](value)(constructor.typeclass)
+                  case Some(value) => BsonDecoder[constructor.SType](value)(constructor.typeclass)
                 }
               case valid => valid
             }
@@ -195,5 +191,4 @@ object Decoder extends LowPrioDecoders with FieldMappings {
     }
   }
 
-  implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]
 }
