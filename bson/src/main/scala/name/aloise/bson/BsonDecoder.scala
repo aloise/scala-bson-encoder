@@ -25,6 +25,11 @@ case class AdtCaseClassNameWasNotFound(caseClassName: String, knownCaseClassName
 
 
 trait BsonDecoder[T] {
+  /**
+   * What to do in key was with this decoder was not found in the Document. Example: Option : None
+   * @return
+   */
+  def defaultOnNotFoundKey: Option[T] = None
   def apply(a: BsonValue): DecodedResult[T]
 }
 
@@ -97,10 +102,15 @@ trait LowPrioDecoders extends LowestPrioDecoders {
     case bson => invalidNec(PrimitiveDecoderFailed(bson, classOf[Array[Byte]].getName))
   }
 
-  implicit def optionDecoder[A : BsonDecoder]: BsonDecoder[Option[A]] = {
-    case _: BsonNull => valid(None)
-    case value: BsonValue => BsonDecoder[A](value).map(Option(_))
+  protected class OptionDecoder[A : BsonDecoder] extends BsonDecoder[Option[A]] {
+    override def defaultOnNotFoundKey: Option[None.type] = Some(None)
+    override def apply(a: BsonValue): DecodedResult[Option[A]] = a match {
+      case _: BsonNull => valid(None)
+      case value: BsonValue => BsonDecoder[A](value).map(Option(_))
+    }
   }
+
+  implicit def optionDecoder[A : BsonDecoder]: BsonDecoder[Option[A]] = new OptionDecoder[A]
 
   implicit def listDecoder[A : BsonDecoder]: BsonDecoder[List[A]] = {
     case arr: BsonArray =>
@@ -153,7 +163,10 @@ trait BsonDecoderDerivation extends LowPrioDecoders with FieldMappings {
               BsonDecoder[p.PType](value)(p.typeclass)
             case None if p.default.isDefined =>
               valid(p.default.get)
+            case None if p.typeclass.defaultOnNotFoundKey.isDefined =>
+              valid(p.typeclass.defaultOnNotFoundKey.get)
             case _ =>
+              println("XXXXXXXXXX ", p.typeclass.getClass)
               invalidNec(FieldWasNotFoundInBsonDocument(doc, key, p.label))
           }
         case _ =>

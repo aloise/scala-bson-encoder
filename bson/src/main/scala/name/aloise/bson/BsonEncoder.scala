@@ -5,7 +5,7 @@ import java.time.{LocalDate, LocalDateTime, ZoneId}
 import cats.Contravariant
 import org.bson.BsonValue
 import magnolia._
-import name.aloise.bson.utils.FieldMappings
+import name.aloise.bson.utils.{FieldMappings}
 import org.bson._
 
 import scala.language.experimental.macros
@@ -37,7 +37,7 @@ trait LowPrioEncoders extends LowestPrioEncoders {
 
   implicit val byteArrayEncoder: BsonEncoder[Array[Byte]] = new BsonBinary(_)
   implicit def optionEncoder[A : BsonEncoder]: BsonEncoder[Option[A]] = (a: Option[A]) =>
-    a.fold[BsonValue](new BsonNull)(BsonEncoder[A])
+    a.fold[BsonValue](BsonExclude)(BsonEncoder[A])
   implicit def iterableEncoder[A : BsonEncoder]: BsonEncoder[Iterable[A]] = (a: Iterable[A]) =>
     new BsonArray(a.map(BsonEncoder[A]).toList.asJava)
 }
@@ -52,6 +52,13 @@ object BsonEncoder {
 
 trait BsonEncoderDerivation extends LowPrioEncoders with FieldMappings {
 
+  protected def addFieldToDocument(baseDoc: BsonDocument, fieldName: String, value: BsonValue): BsonDocument = {
+    if(value != BsonExclude && value != null) {
+      baseDoc.put(fieldName, value)
+    }
+    baseDoc
+  }
+
   def combine[T](caseClass: CaseClass[BsonEncoder, T])(
     implicit config: Configuration): BsonEncoder[T] = {
     val paramsLookup = getFieldNameMappings[BsonEncoder, T](caseClass)
@@ -62,12 +69,11 @@ trait BsonEncoderDerivation extends LowPrioEncoders with FieldMappings {
         val param = caseClass.parameters.head
         param.typeclass(param.dereference(a))
       } else {
-        val doc = new BsonDocument()
-        caseClass.parameters.foreach { p =>
+        caseClass.parameters.foldLeft(new BsonDocument()) { case (doc, p) =>
           val label = paramsLookup(p.label)
-          doc.put(label, p.typeclass(p.dereference(a)))
+          val encodedBson = p.typeclass(p.dereference(a))
+          addFieldToDocument(doc, label, encodedBson)
         }
-        doc
       }
     }
   }
@@ -91,12 +97,9 @@ trait BsonEncoderDerivation extends LowPrioEncoders with FieldMappings {
 
             case _ =>
               // We cant' inject the discriminator field cause it's not a BsonDocument. The discriminator field is wrapped in the object
-              val wrappingDoc = new BsonDocument()
-              wrappingDoc.put(config.adtPrimitiveValueFieldName, baseBson)
-              wrappingDoc
+              addFieldToDocument(new BsonDocument(), config.adtPrimitiveValueFieldName, baseBson)
           }
-        outputDocWithoutTypeDiscriminator.put(config.discriminatorFieldName, new BsonString(className))
-        outputDocWithoutTypeDiscriminator
+        addFieldToDocument(outputDocWithoutTypeDiscriminator, config.discriminatorFieldName, new BsonString(className))
       }
   }
 
