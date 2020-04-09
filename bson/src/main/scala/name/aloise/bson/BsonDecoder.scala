@@ -166,7 +166,6 @@ trait BsonDecoderDerivation extends LowPrioDecoders with FieldMappings {
             case None if p.typeclass.defaultOnNotFoundKey.isDefined =>
               valid(p.typeclass.defaultOnNotFoundKey.get)
             case _ =>
-              println("XXXXXXXXXX ", p.typeclass.getClass)
               invalidNec(FieldWasNotFoundInBsonDocument(doc, key, p.label))
           }
         case _ =>

@@ -5,27 +5,50 @@ import java.time.{LocalDate, LocalDateTime, ZoneId}
 import cats.Contravariant
 import org.bson.BsonValue
 import magnolia._
-import name.aloise.bson.utils.{FieldMappings}
+import name.aloise.bson.utils.FieldMappings
 import org.bson._
 
 import scala.language.experimental.macros
 
 
-trait BsonEncoder[-T] {
+trait BsonEncoder[T] {
   def apply(a: T): BsonValue
 }
 
 trait LowestPrioEncoders {
+  import scala.jdk.CollectionConverters._
   implicit def bsonValueEncoder[T <: BsonValue]: BsonEncoder[T] = (bson: T) => bson
 
   implicit val encoderFunctor: Contravariant[BsonEncoder]= new Contravariant[BsonEncoder] {
     override def contramap[A, B](fa: BsonEncoder[A])(f: B => A): BsonEncoder[B] = (a: B) => fa(f(a))
   }
+  implicit def iterableEncoder[CC[A] <: Iterable[A], A : BsonEncoder]: BsonEncoder[CC[A]] = (a: Iterable[A]) =>
+    new BsonArray(a.map(BsonEncoder[A]).toList.asJava)
 }
+
+object BsonEncoder {
+  implicit class ToBson[T : BsonEncoder](a: T) {
+    def toBson: BsonValue = BsonEncoder[T](a)
+  }
+
+  def apply[T : BsonEncoder](a: T): BsonValue = implicitly[BsonEncoder[T]].apply(a)
+
+  protected def document(elems: EncodeToBsonElement*): BsonDocument = {
+    val underlying = new BsonDocument()
+    elems.foreach(elem => underlying.put(elem.key, elem.value))
+    underlying
+  }
+
+  protected def array(elems: EncodeToBsonValue*): BsonArray = {
+    val underlying = new BsonArray()
+    elems.foreach(e => underlying.add(e.value))
+    underlying
+  }
+}
+
 
 trait LowPrioEncoders extends LowestPrioEncoders {
   import cats.implicits._
-  import scala.jdk.CollectionConverters._
 
   implicit val stringEncoder: BsonEncoder[String] = new BsonString(_)
   implicit val intEncoder: BsonEncoder[Int] = new BsonInt32(_)
@@ -38,16 +61,7 @@ trait LowPrioEncoders extends LowestPrioEncoders {
   implicit val byteArrayEncoder: BsonEncoder[Array[Byte]] = new BsonBinary(_)
   implicit def optionEncoder[A : BsonEncoder]: BsonEncoder[Option[A]] = (a: Option[A]) =>
     a.fold[BsonValue](BsonExclude)(BsonEncoder[A])
-  implicit def iterableEncoder[A : BsonEncoder]: BsonEncoder[Iterable[A]] = (a: Iterable[A]) =>
-    new BsonArray(a.map(BsonEncoder[A]).toList.asJava)
-}
 
-object BsonEncoder {
-  implicit class ToBson[T : BsonEncoder](a: T) {
-    def toBson: BsonValue = BsonEncoder[T](a)
-  }
-
-  def apply[T : BsonEncoder](a: T): BsonValue = implicitly[BsonEncoder[T]].apply(a)
 }
 
 trait BsonEncoderDerivation extends LowPrioEncoders with FieldMappings {
@@ -106,3 +120,26 @@ trait BsonEncoderDerivation extends LowPrioEncoders with FieldMappings {
 //  implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]
 }
 
+sealed trait EncodeToBsonValue {
+  def value: BsonValue
+}
+
+object EncodeToBsonValue {
+  implicit def encodeToBsonValue[T : BsonEncoder](v: T): EncodeToBsonValue = new EncodeToBsonValue {
+    val value: BsonValue = BsonEncoder[T](v)
+  }
+}
+
+sealed trait EncodeToBsonElement extends EncodeToBsonValue {
+  val bsonElement: BsonElement
+  val key: String = bsonElement.getName
+  val value: BsonValue = bsonElement.getValue
+}
+
+object EncodeToBsonElement {
+  implicit def tupleToCanBeBsonElement[T : BsonEncoder](kv: (String, T)): EncodeToBsonElement = {
+    new EncodeToBsonElement {
+      override val bsonElement: BsonElement = new BsonElement(kv._1, BsonEncoder[T](kv._2))
+    }
+  }
+}

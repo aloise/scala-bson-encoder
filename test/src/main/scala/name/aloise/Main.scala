@@ -10,12 +10,13 @@ import name.aloise.bson.derivation.encoder.auto._
 object Main extends App {
 
   final class ObjectId(val id: Int) extends AnyVal
+  case class Test2(x: Option[String], next: Option[Test1] = None)
   case class Test1(name: String, value2: Int)
 
   sealed trait AdtTest
   case class AdtTest1(name: String) extends AdtTest
   case class AdtTest2(name1: String) extends AdtTest
-  case class AdtTest3(name2: List[String], lng: Option[Double], x: Test1) extends AdtTest
+  case class AdtTest3(name2: List[String], lng: Option[Test1], x: Test1, y: List[Test2] = Nil) extends AdtTest
   case class AdtTest4Primitive(x: Long) extends AdtTest
   case object AdtObject extends AdtTest
 
