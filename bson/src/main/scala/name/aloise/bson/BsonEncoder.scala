@@ -15,23 +15,22 @@ trait BsonEncoder[T] {
   def apply(a: T): BsonValue
 }
 
-trait LowestPrioEncoders {
-  import scala.jdk.CollectionConverters._
-  implicit def bsonValueEncoder[T <: BsonValue]: BsonEncoder[T] = (bson: T) => bson
-
-  implicit val encoderFunctor: Contravariant[BsonEncoder]= new Contravariant[BsonEncoder] {
-    override def contramap[A, B](fa: BsonEncoder[A])(f: B => A): BsonEncoder[B] = (a: B) => fa(f(a))
-  }
-  implicit def iterableEncoder[CC[A] <: Iterable[A], A : BsonEncoder]: BsonEncoder[CC[A]] = (a: Iterable[A]) =>
-    new BsonArray(a.map(BsonEncoder[A]).toList.asJava)
-}
-
 object BsonEncoder {
   implicit class ToBson[T : BsonEncoder](a: T) {
+    import scala.jdk.CollectionConverters._
+
     def toBson: BsonValue = BsonEncoder[T](a)
+
+    def toDocument: org.bson.Document = toBson match {
+      case doc: BsonDocument =>
+        new org.bson.Document(doc.asScala.map{case (k, v) => (k, v: Object)}.asJava)
+      case b => throw new IllegalArgumentException(s"Can't encode Bson value of type ${b.getBsonType.name} as BsonDocument")
+    }
   }
 
   def apply[T : BsonEncoder](a: T): BsonValue = implicitly[BsonEncoder[T]].apply(a)
+
+
 
   protected def document(elems: EncodeToBsonElement*): BsonDocument = {
     val underlying = new BsonDocument()
@@ -47,8 +46,20 @@ object BsonEncoder {
 }
 
 
+trait LowestPrioEncoders {
+  import scala.jdk.CollectionConverters._
+  implicit def bsonValueEncoder[T <: BsonValue]: BsonEncoder[T] = (bson: T) => bson
+
+  implicit val encoderFunctor: Contravariant[BsonEncoder]= new Contravariant[BsonEncoder] {
+    override def contramap[A, B](fa: BsonEncoder[A])(f: B => A): BsonEncoder[B] = (a: B) => fa(f(a))
+  }
+  implicit def iterableEncoder[CC[A] <: Iterable[A], A : BsonEncoder]: BsonEncoder[CC[A]] = (a: Iterable[A]) =>
+    new BsonArray(a.map(BsonEncoder[A]).toList.asJava)
+}
+
 trait LowPrioEncoders extends LowestPrioEncoders {
   import cats.implicits._
+  import scala.jdk.CollectionConverters._
 
   implicit val stringEncoder: BsonEncoder[String] = new BsonString(_)
   implicit val intEncoder: BsonEncoder[Int] = new BsonInt32(_)
@@ -57,10 +68,15 @@ trait LowPrioEncoders extends LowestPrioEncoders {
   implicit val localDateTimeEncoder: BsonEncoder[LocalDateTime] = (d: LocalDateTime) => new BsonDateTime(d.atZone(ZoneId.of("UTC")).toInstant.toEpochMilli)
   implicit val localDateEncoder: BsonEncoder[LocalDate] = localDateTimeEncoder.contramap(LocalDateTime.from)
   implicit val boolEncoder: BsonEncoder[Boolean] = new BsonBoolean(_)
-
   implicit val byteArrayEncoder: BsonEncoder[Array[Byte]] = new BsonBinary(_)
+
   implicit def optionEncoder[A : BsonEncoder]: BsonEncoder[Option[A]] = (a: Option[A]) =>
     a.fold[BsonValue](BsonExclude)(BsonEncoder[A])
+
+  implicit def arrayEncoder[A : BsonEncoder]: BsonEncoder[Array[A]] = (a: Array[A]) =>
+    new BsonArray(a.iterator.map(BsonEncoder[A]).toList.asJava)
+
+  implicit def listEncoder[A : BsonEncoder]: BsonEncoder[List[A]] = iterableEncoder[List, A]
 
 }
 
