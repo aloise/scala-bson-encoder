@@ -148,8 +148,8 @@ object EncodeToBsonValue {
 
 sealed trait EncodeToBsonElement extends EncodeToBsonValue {
   val bsonElement: BsonElement
-  val key: String = bsonElement.getName
-  val value: BsonValue = bsonElement.getValue
+  def key: String = bsonElement.getName
+  def value: BsonValue = bsonElement.getValue
 }
 
 object EncodeToBsonElement {
