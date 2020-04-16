@@ -10,6 +10,8 @@ import mercator.Monadic
 import name.aloise.bson.BsonDecoder.DecodedResult
 import name.aloise.bson.utils.FieldMappings
 import org.bson._
+
+import scala.collection.Factory
 import scala.reflect.ClassTag
 
 sealed trait DecoderError
@@ -41,18 +43,20 @@ trait LowestPrioDecoders {
 
   import scala.jdk.CollectionConverters._
 
-  // TODO - doesn't work
-/*  implicit def iterableDecoder[T[_] <: Iterable[A] : IterableFactory, A : Decoder]: Decoder[T[A]] = {
+  implicit def iterableDecoder[T[A] <: Iterable[A], A : BsonDecoder](implicit factory: Factory[A, T[A]]): BsonDecoder[T[A]] = {
     case arr: BsonArray =>
+      import scala.jdk.CollectionConverters._
       import cats.implicits._
 
-      val mapped: DecodedResult[List[A]] = arr.getValues.asScala.map(Decoder[A]).toList.sequence
-      mapped.map {
-        implicitly[IterableFactory[T]].from
-      }
-    case value => invalidNec(BsonArrayDecoderFailed(value))
-  }*/
+      arr.getValues
+        .asScala
+        .map(BsonDecoder[A])
+        .toList
+        .sequence
+        .map(factory.fromSpecific)
 
+    case value => invalidNec(BsonArrayDecoderFailed(value))
+  }
 
 
 }
@@ -111,17 +115,6 @@ trait LowPrioDecoders extends LowestPrioDecoders {
   }
 
   implicit def optionDecoder[A : BsonDecoder]: BsonDecoder[Option[A]] = new OptionDecoder[A]
-
-  implicit def listDecoder[A : BsonDecoder]: BsonDecoder[List[A]] = {
-    case arr: BsonArray =>
-      import cats.implicits._
-      import scala.jdk.CollectionConverters._
-      arr.getValues.asScala.map(BsonDecoder[A]).toList.sequence
-    case value => invalidNec(BsonArrayDecoderFailed(value))
-  }
-
-  implicit def setDecoder[A : BsonDecoder]: BsonDecoder[Set[A]] = listDecoder[A].map(_.toSet)
-  implicit def vectorDecoder[A : BsonDecoder]: BsonDecoder[Vector[A]] = listDecoder[A].map(_.toVector)
 
 }
 
