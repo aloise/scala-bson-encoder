@@ -28,7 +28,6 @@ object Main extends App {
 
   implicit def encAdtTest4Primitive: BsonEncoder[AdtTest4Primitive] = (a: AdtTest4Primitive) => new BsonInt64(a.x)
 
-
   println(Test1("Hello World", 2).toBson)
   println((AdtTest1("Hello World")).toBson)
   println((AdtTest3(List("Hello World", "Hello Again"), None, Test1("name1", Int.MaxValue))).toBson)
@@ -37,7 +36,7 @@ object Main extends App {
   println((new ObjectId(4)).toBson)
 
   println((Set(Test1("Hello1", 5), Test1("Hello2", 6))).toBson)
-  println((Vector(Test1("Hello1", 5), Test1("Hello2", 6))).toBson)
+  // println((List(Test1("Hello1", 5), Test1("Hello2", 6))).toBson)
   println((Seq(Test1("Hello1", 5), Test1("Hello2", 6))).toBson)
   val list1: List[Test1] = List(Test1("Hello1", 5), Test1("Hello2", 6), Test1("Hello3", 7))
   println(listEncoder[Test1].apply(list1))
