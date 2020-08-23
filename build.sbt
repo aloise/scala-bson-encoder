@@ -8,7 +8,7 @@ lazy val bson = (project in file("bson"))
 
 lazy val test = (project in file("test")).dependsOn(bson).settings(
   libraryDependencies ++= Seq(
-    "org.mongodb.scala" %% "mongo-scala-driver" % "4.0.3"
+    "org.mongodb" % "bson" % "4.1.0"
   )
 )
 

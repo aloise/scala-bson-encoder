@@ -1,11 +1,11 @@
 package name.aloise
 
 import name.aloise.bson._
-import org.mongodb.scala.bson.BsonInt64
 import name.aloise.bson.BsonEncoder._
 import name.aloise.bson.BsonDecoder._
 import name.aloise.bson.derivation.decoder.auto._
 import name.aloise.bson.derivation.encoder.auto._
+import org.bson.BsonInt64
 
 object Main extends App {
 
@@ -19,6 +19,7 @@ object Main extends App {
   case class AdtTest3(name2: List[String], lng: Option[Test1], x: Test1, y: List[Test2] = Nil) extends AdtTest
   case class AdtTest4Primitive(x: Long) extends AdtTest
   case object AdtObject extends AdtTest
+  case object AdtObject2 extends AdtTest
 
   object AdtTest {
     implicit val adtEncoder = implicitly[BsonEncoder[AdtTest]]
@@ -33,6 +34,7 @@ object Main extends App {
   println((AdtTest3(List("Hello World", "Hello Again"), None, Test1("name1", Int.MaxValue))).toBson)
   println((AdtTest4Primitive(5L)).toBson)
   println((AdtObject).toBson)
+  println((AdtObject2).toBson)
   println((new ObjectId(4)).toBson)
 
   println((Set(Test1("Hello1", 5), Test1("Hello2", 6))).toBson)

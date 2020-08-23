@@ -2,9 +2,11 @@ name := "magnolia-bson"
 
 version := "0.1"
 
+scalaVersion := "2.13.3"
+
 libraryDependencies ++= Seq(
-  "org.mongodb.scala" %% "mongo-scala-driver" % "4.0.1",
-  "com.propensive" %% "magnolia" % "0.14.1",
-  "org.typelevel" %% "cats-core" % "2.2.0-M1"
-//  "com.chuusai" % "shapeless_2.13" % "2.4.0-M1"
+  "org.mongodb" % "bson" % "4.1.0",
+  "com.propensive" %% "magnolia" % "0.17.0",
+  "org.typelevel" %% "cats-core" % "2.2.0-RC3",
+  "org.scala-lang" % "scala-reflect" % scalaVersion.value
 )
