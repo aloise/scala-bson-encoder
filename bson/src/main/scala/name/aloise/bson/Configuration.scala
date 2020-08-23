@@ -13,6 +13,5 @@ final case class Key(value: String) extends StaticAnnotation
 
 object Configuration {
   implicit val DefaultBsonConfiguration: Configuration =
-    Configuration(discriminatorFieldName = "className",
-      adtPrimitiveValueFieldName = "value")
+    Configuration(discriminatorFieldName = "className", adtPrimitiveValueFieldName = "value")
 }

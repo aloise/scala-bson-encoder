@@ -89,8 +89,7 @@ trait BsonEncoderDerivation extends LowPrioEncoders with FieldMappings {
     baseDoc
   }
 
-  def combine[T](caseClass: CaseClass[BsonEncoder, T])(
-    implicit config: Configuration): BsonEncoder[T] = {
+  def combine[T](caseClass: CaseClass[BsonEncoder, T])(implicit config: Configuration): BsonEncoder[T] = {
     val paramsLookup = getFieldNameMappings[BsonEncoder, T](caseClass)
 
     (a: T) => {
@@ -99,11 +98,15 @@ trait BsonEncoderDerivation extends LowPrioEncoders with FieldMappings {
         val param = caseClass.parameters.head
         param.typeclass(param.dereference(a))
       } else {
-        caseClass.parameters.foldLeft(new BsonDocument()) { case (doc, p) =>
-          val label = paramsLookup(p.label)
-          val encodedBson = p.typeclass(p.dereference(a))
-          addFieldToDocument(doc, label, encodedBson)
-        }
+        val result =
+          caseClass.parameters.foldLeft(new BsonDocument()) { case (doc, p) =>
+            val label = paramsLookup(p.label)
+            val encodedBson = p.typeclass(p.dereference(a))
+            addFieldToDocument(doc, label, encodedBson)
+          }
+        if(caseClass.isObject) {
+          addFieldToDocument(result, config.discriminatorFieldName, new BsonString(caseClass.typeName.short))
+        } else result
       }
     }
   }

@@ -37,6 +37,9 @@ object Main extends App {
   println((AdtObject2).toBson)
   println((new ObjectId(4)).toBson)
 
+  val adtTest: AdtTest = AdtTest4Primitive(5L)
+  println(adtTest.toBson)
+
   println((Set(Test1("Hello1", 5), Test1("Hello2", 6))).toBson)
   // println((List(Test1("Hello1", 5), Test1("Hello2", 6))).toBson)
   println((Seq(Test1("Hello1", 5), Test1("Hello2", 6))).toBson)
